@@ -146,8 +146,7 @@ def generate_with_cogvideox(prompt, output_path, num_frames=49, fps=8, steps=50,
     # Load pipeline without quantization (simpler, more compatible)
     pipeline = CogVideoXPipeline.from_pretrained(
         "THUDM/CogVideoX-5b",
-        torch_dtype=torch.bfloat16,
-        variant="fp16"
+        torch_dtype=torch.bfloat16
     )
     pipeline.to("cuda")
     pipeline.enable_model_cpu_offload()
@@ -181,8 +180,7 @@ def generate_with_hunyuan(prompt, output_path, num_frames=61, fps=15, steps=30, 
     # Load pipeline without quantization for compatibility
     pipeline = HunyuanVideoPipeline.from_pretrained(
         "hunyuanvideo-community/HunyuanVideo",
-        torch_dtype=torch.bfloat16,
-        variant="fp16"
+        torch_dtype=torch.bfloat16
     )
     
     pipeline.enable_model_cpu_offload()
@@ -267,7 +265,6 @@ def generate_with_svd(prompt, output_path, num_frames=25, fps=7, steps=25, gpu_i
     sdxl = StableDiffusionXLPipeline.from_pretrained(
         "stabilityai/stable-diffusion-xl-base-1.0",
         torch_dtype=torch.float16,
-        variant="fp16",
         use_safetensors=True
     )
     sdxl.to("cuda")
@@ -286,8 +283,7 @@ def generate_with_svd(prompt, output_path, num_frames=25, fps=7, steps=25, gpu_i
     print(f"[GPU {gpu_id}] Generating video from image...")
     pipe = StableVideoDiffusionPipeline.from_pretrained(
         "stabilityai/stable-video-diffusion-img2vid-xt",
-        torch_dtype=torch.float16,
-        variant="fp16"
+        torch_dtype=torch.float16
     )
     pipe.to("cuda")
     
