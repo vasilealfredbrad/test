@@ -33,11 +33,23 @@ STORY = """
 Meet Alin, a Romanian guy who accidentally became an AI expert overnight.
 It all started when he tried to fix his grandmother's computer.
 He clicked on everything, downloaded random files, and somehow installed Python.
+The next day, his friends saw the black terminal window on his screen and were amazed!
+They thought he was some kind of elite hacker working on secret government projects.
 Now his friends think he's a genius programmer who can hack anything!
+They ask him to fix their phones, recover deleted photos, and even hack WiFi passwords.
 Alin doesn't have the heart to tell them he still Googles how to center a div.
+Last week, he spent three hours debugging a missing semicolon in his code.
 His secret weapon? Copying code from Stack Overflow and hoping for the best.
+He reads the documentation like it's written in ancient hieroglyphics.
+Sometimes he just adds random print statements until something works.
+His debugging technique is basically changing things until the error message goes away.
 But hey, fake it till you make it, right? That's the Romanian way!
-Now he's creating AI videos to prove he's legit. Wish him luck!
+One time, he accidentally deleted his entire project and blamed it on a virus.
+His mom still thinks he works for NASA because he uses dark mode in his editor.
+Now he's creating AI videos to prove he's legit and show off his skills.
+He's using the most powerful transformers and GPU acceleration for maximum quality.
+The videos look so professional that even he's starting to believe his own hype!
+Wish him luck on this incredible journey from zero to AI hero!
 """
 
 # Output directory for generated files
@@ -763,40 +775,72 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
         print(f"\nGenerating video with prompt:")
         print(f"  \"{prompt[:100]}...\"")
         
-        # Step 1: Generate a high-quality initial image for better video quality
-        print(f"\n[1/6] Generating high-quality initial image...")
-        print("  💡 Using Stable Diffusion for photorealistic base image")
+        # Step 1: Generate a high-quality initial image using SDXL Base + Refiner
+        print(f"\n[1/6] Generating ULTRA HIGH-QUALITY initial image with SDXL...")
+        print("  💡 Using Stable Diffusion XL Base + Refiner for photorealistic quality")
+        print("  📊 This will download ~13GB on first run (SDXL is worth it!)")
         
         try:
-            from diffusers import StableDiffusionPipeline
+            from diffusers import StableDiffusionXLPipeline, StableDiffusionXLImg2ImgPipeline
             
-            # Load Stable Diffusion for initial image
-            sd_pipe = StableDiffusionPipeline.from_pretrained(
-                "runwayml/stable-diffusion-v1-5",
-                torch_dtype=torch.float16
+            # Load SDXL Base model for initial generation
+            print("  [1a/3] Loading SDXL Base model...")
+            sdxl_base = StableDiffusionXLPipeline.from_pretrained(
+                "stabilityai/stable-diffusion-xl-base-1.0",
+                torch_dtype=torch.float16,
+                variant="fp16",
+                use_safetensors=True
             )
-            sd_pipe.to("cuda")
+            sdxl_base.to("cuda")
             
-            # Generate high-quality initial frame
-            initial_image = sd_pipe(
+            # Generate base image with SDXL (denoising_end controls when to switch to refiner)
+            print("  [1b/3] Generating with SDXL Base (1024x1024)...")
+            base_image = sdxl_base(
                 prompt,
-                num_inference_steps=50,  # High quality image
-                guidance_scale=9.0,
-                height=720,
-                width=1280
+                num_inference_steps=100,  # Ultra high quality
+                guidance_scale=7.5,  # Balanced for photorealism
+                height=1024,  # SDXL native resolution
+                width=1024,
+                denoising_end=0.8,  # Base handles 80% of denoising
+                output_type="latent"  # Output latents for refiner
+            ).images[0]
+            
+            # Clean up base model to free memory for refiner
+            del sdxl_base
+            torch.cuda.empty_cache()
+            
+            # Load SDXL Refiner model
+            print("  [1c/3] Loading SDXL Refiner for final enhancement...")
+            sdxl_refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
+                "stabilityai/stable-diffusion-xl-refiner-1.0",
+                torch_dtype=torch.float16,
+                variant="fp16",
+                use_safetensors=True
+            )
+            sdxl_refiner.to("cuda")
+            
+            # Refine the image for photorealistic quality
+            print("  [1d/3] Refining with SDXL Refiner for photorealistic details...")
+            initial_image = sdxl_refiner(
+                prompt,
+                image=base_image,
+                num_inference_steps=100,
+                denoising_start=0.8,  # Refiner handles final 20%
+                guidance_scale=7.5
             ).images[0]
             
             # Save initial image
             initial_image_path = OUTPUT_DIR / "initial_frame.png"
             initial_image.save(initial_image_path)
-            print(f"  ✓ High-quality image generated: {initial_image_path}")
+            print(f"  ✓ ULTRA HIGH-QUALITY SDXL image generated: {initial_image_path}")
+            print(f"  ✓ Resolution: 1024x1024 (SDXL native)")
             
-            # Clean up SD pipeline to free memory
-            del sd_pipe
+            # Clean up refiner pipeline to free memory
+            del sdxl_refiner
             torch.cuda.empty_cache()
             
         except Exception as e:
-            print(f"  ⚠ Could not generate initial image: {e}")
+            print(f"  ⚠ Could not generate SDXL initial image: {e}")
             print(f"  → Continuing with text-to-video only")
             initial_image = None
         
@@ -836,28 +880,31 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
         print(f"  ✓ Model loaded in {load_time:.1f}s")
         
         # Generate video frames with ULTRA HIGH quality settings
-        print(f"\n[3/6] Generating video frames (HIGH QUALITY MODE)...")
-        print(f"  ⏱️  Estimated time: 10-20 minutes (worth it for quality!)")
-        print(f"  💡 Using maximum quality settings for photorealistic output")
+        print(f"\n[3/6] Generating video frames (ULTRA HIGH QUALITY MODE)...")
+        print(f"  ⏱️  Estimated time: 15-25 minutes (maximum quality!)")
+        print(f"  💡 Using ENHANCED micro-conditioning for photorealistic output")
+        print(f"  🎬 96 frames for ultra-smooth motion at 24fps")
         
         frame_start = time.time()
         
         if USE_IMG2VID and initial_image:
-            # Image-to-video: Much better quality!
+            # Image-to-video with ENHANCED micro-conditioning parameters
+            # These are the state-of-the-art settings for best quality
             video_frames = pipe(
                 initial_image,
-                decode_chunk_size=8,
-                num_frames=48,
-                motion_bucket_id=127,  # More motion
-                noise_aug_strength=0.02,  # Less noise
-                num_inference_steps=30,  # Higher quality
+                decode_chunk_size=8,  # Memory efficient decoding
+                num_frames=96,  # Doubled frames for smoother video (4 seconds at 24fps)
+                motion_bucket_id=180,  # Higher motion for more dynamic scenes
+                noise_aug_strength=0.02,  # Minimal noise for highest quality
+                num_inference_steps=40,  # Increased inference steps for better quality
             ).frames[0]
+            print(f"  ✓ Enhanced SVD with micro-conditioning: motion_bucket_id=180, noise=0.02")
         else:
             # Text-to-video with enhanced settings
             video_frames = pipe(
                 prompt,
-                num_inference_steps=30,  # Increased for maximum quality
-                num_frames=60,  # More frames for smoother video
+                num_inference_steps=40,  # Increased for maximum quality
+                num_frames=96,  # More frames for smoother video
                 guidance_scale=12.0,  # Strong prompt adherence
                 output_type="np"
             ).frames[0]
@@ -897,21 +944,24 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
         
         # Write final output
         output_path = OUTPUT_DIR / f"ai_generated_video_{resolution}.mp4"
-        print(f"\n[6/6] Rendering final HIGH QUALITY video: {output_path}")
-        print(f"  ⏱️  Estimated time: 2-4 minutes")
+        print(f"\n[6/6] Rendering final ULTRA HIGH QUALITY video: {output_path}")
+        print(f"  ⏱️  Estimated time: 3-5 minutes")
+        print(f"  🎬 Encoding with maximum quality settings...")
         
         render_start = time.time()
         
-        # Render with high bitrate for best quality
+        # Render with ULTRA HIGH bitrate and quality settings for professional output
         video_with_audio.write_videofile(
             str(output_path),
             fps=fps,
             codec='libx264',
             audio_codec='aac',
-            bitrate='8000k',  # High bitrate for quality
-            preset='slow',  # Better compression/quality
+            bitrate='12000k',  # 50% higher bitrate for maximum quality
+            preset='slower',  # Better compression efficiency = sharper details
+            audio_bitrate='320k',  # High quality audio
             verbose=False,
-            logger='bar'
+            logger='bar',
+            ffmpeg_params=['-crf', '18']  # Constant Rate Factor for high quality (lower = better)
         )
         
         render_time = time.time() - render_start
