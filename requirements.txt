@@ -1,0 +1,63 @@
+# TTS-to-SRT Pipeline Dependencies
+# Install with: pip install -r requirements.txt
+
+# =============================================================================
+# INSTALLATION INSTRUCTIONS FOR GPU SUPPORT
+# =============================================================================
+#
+# Your current PyTorch is CPU-only. To enable GPU acceleration:
+# Detected GPU: NVIDIA GeForce RTX 3060 (12GB) with CUDA 12.7
+#
+# 1. Uninstall CPU-only PyTorch:
+#    pip uninstall torch torchvision torchaudio
+#
+# 2. Install PyTorch with CUDA support:
+#
+#    For CUDA 12.x (including 12.7 - RECOMMENDED FOR YOUR SYSTEM):
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+#
+#    Alternative CUDA versions:
+#    For CUDA 11.8:
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#
+# 3. Verify installation:
+#    python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+#
+# For more info, visit: https://pytorch.org/get-started/locally/
+#
+# =============================================================================
+
+# Core deep learning framework (CPU version - see above for GPU)
+torch>=2.0.0
+
+# Hugging Face Transformers for Bark TTS model
+transformers>=4.30.0
+
+# OpenAI Whisper for speech recognition with word timestamps
+openai-whisper>=20230314
+
+# Audio file I/O
+scipy>=1.10.0
+
+# Model optimization and acceleration
+accelerate>=0.20.0
+
+# Video editing and processing (use 1.0.3 for compatibility)
+moviepy==1.0.3
+
+# Pillow (required for MoviePy, use 9.5.0 for ANTIALIAS compatibility)
+pillow==9.5.0
+
+# Text-to-video generation (Hugging Face Diffusers)
+diffusers>=0.21.0
+
+# Audio analysis for emotion detection
+librosa>=0.10.0
+soundfile>=0.12.0
+
+# Sentiment analysis for emotion detection from text
+textblob>=0.17.0
+
+# Optional: For even faster inference on GPU (install after torch+cuda)
+# flash-attn>=2.0.0
+
