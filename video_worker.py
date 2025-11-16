@@ -140,36 +140,19 @@ def generate_with_cogvideox(prompt, output_path, num_frames=49, fps=8, steps=50,
     """Generate video using CogVideoX-5B with optimizations."""
     print(f"[GPU {gpu_id}] Loading CogVideoX-5B...")
     
-    from diffusers import CogVideoXPipeline, AutoModel
-    from diffusers.quantizers import PipelineQuantizationConfig
+    from diffusers import CogVideoXPipeline
     from diffusers.utils import export_to_video
     
-    # Quantization config for memory efficiency
-    pipeline_quant_config = PipelineQuantizationConfig(
-        quant_backend="torchao",
-        quant_kwargs={"quant_type": "int8wo"},
-        components_to_quantize="transformer"
-    )
-    
-    # Load transformer with fp8 layerwise casting
-    transformer = AutoModel.from_pretrained(
-        "THUDM/CogVideoX-5b",
-        subfolder="transformer",
-        torch_dtype=torch.bfloat16
-    )
-    transformer.enable_layerwise_casting(
-        storage_dtype=torch.float8_e4m3fn,
-        compute_dtype=torch.bfloat16
-    )
-    
+    # Load pipeline without quantization (simpler, more compatible)
     pipeline = CogVideoXPipeline.from_pretrained(
         "THUDM/CogVideoX-5b",
-        transformer=transformer,
-        quantization_config=pipeline_quant_config,
-        torch_dtype=torch.bfloat16
+        torch_dtype=torch.bfloat16,
+        variant="fp16"
     )
     pipeline.to("cuda")
     pipeline.enable_model_cpu_offload()
+    pipeline.vae.enable_tiling()
+    pipeline.vae.enable_slicing()
     
     print(f"[GPU {gpu_id}] Generating {num_frames} frames...")
     start_time = time.time()
@@ -189,32 +172,22 @@ def generate_with_cogvideox(prompt, output_path, num_frames=49, fps=8, steps=50,
 
 
 def generate_with_hunyuan(prompt, output_path, num_frames=61, fps=15, steps=30, gpu_id=0):
-    """Generate video using HunyuanVideo with quantization."""
+    """Generate video using HunyuanVideo."""
     print(f"[GPU {gpu_id}] Loading HunyuanVideo...")
     
     from diffusers import HunyuanVideoPipeline
-    from diffusers.quantizers import PipelineQuantizationConfig
     from diffusers.utils import export_to_video
     
-    # int4 quantization for efficiency
-    pipeline_quant_config = PipelineQuantizationConfig(
-        quant_backend="bitsandbytes_4bit",
-        quant_kwargs={
-            "load_in_4bit": True,
-            "bnb_4bit_quant_type": "nf4",
-            "bnb_4bit_compute_dtype": torch.bfloat16
-        },
-        components_to_quantize="transformer"
-    )
-    
+    # Load pipeline without quantization for compatibility
     pipeline = HunyuanVideoPipeline.from_pretrained(
         "hunyuanvideo-community/HunyuanVideo",
-        quantization_config=pipeline_quant_config,
         torch_dtype=torch.bfloat16,
+        variant="fp16"
     )
     
     pipeline.enable_model_cpu_offload()
     pipeline.vae.enable_tiling()
+    pipeline.vae.enable_slicing()
     
     print(f"[GPU {gpu_id}] Generating {num_frames} frames...")
     start_time = time.time()
