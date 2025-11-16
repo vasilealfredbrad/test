@@ -85,7 +85,11 @@ VIDEO_RESOLUTIONS = {
     "1080p": (1920, 1080)
 }
 DEFAULT_RESOLUTION = "720p"
-DEFAULT_FPS = 30
+# Default FPS for final encoded video.
+# Note: The underlying Stable Video Diffusion model is trained at a much lower
+# native FPS; higher FPS values are achieved via re-timing/encoding rather
+# than the model natively generating 60 unique frames per second.
+DEFAULT_FPS = 60
 
 
 # ============================================================================
@@ -276,10 +280,35 @@ def get_video_settings():
             resolution = "720p"
             break
     
-    print(f"\nSelected resolution: {resolution}")
-    print(f"Frame rate: {DEFAULT_FPS} fps")
+    # Ask for desired frame rate (up to 60fps)
+    print("\nSelect output frame rate:")
+    print("  [1] 24 fps  - Cinematic")
+    print("  [2] 30 fps  - Standard video")
+    print("  [3] 60 fps  - Ultra smooth (recommended if your GPU can handle it)\n")
     
-    return resolution, DEFAULT_FPS
+    fps = DEFAULT_FPS
+    while True:
+        try:
+            fps_choice = input("Enter FPS choice (1=24, 2=30, 3=60) [default: 3]: ").strip() or "3"
+            if fps_choice == "1":
+                fps = 24
+                break
+            elif fps_choice == "2":
+                fps = 30
+                break
+            elif fps_choice == "3":
+                fps = 60
+                break
+            else:
+                print("❌ Invalid choice. Please enter 1, 2, or 3.")
+        except Exception:
+            fps = DEFAULT_FPS
+            break
+    
+    print(f"\nSelected resolution: {resolution}")
+    print(f"Selected frame rate: {fps} fps (final encoded video)")
+    
+    return resolution, fps
 
 
 # ============================================================================
@@ -743,6 +772,7 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
         from diffusers import DiffusionPipeline, DPMSolverMultistepScheduler, StableDiffusionPipeline, StableVideoDiffusionPipeline
         from diffusers.utils import export_to_video
         from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
+        import librosa
         import diffusers  # Verify import works
         
         # Create detailed, story-driven prompt for realistic video generation
@@ -888,17 +918,62 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
         frame_start = time.time()
         
         if USE_IMG2VID and initial_image:
-            # Image-to-video with ENHANCED micro-conditioning parameters
-            # These are the state-of-the-art settings for best quality
-            video_frames = pipe(
-                initial_image,
-                decode_chunk_size=8,  # Memory efficient decoding
-                num_frames=96,  # Doubled frames for smoother video (4 seconds at 24fps)
-                motion_bucket_id=180,  # Higher motion for more dynamic scenes
-                noise_aug_strength=0.02,  # Minimal noise for highest quality
-                num_inference_steps=40,  # Increased inference steps for better quality
-            ).frames[0]
-            print(f"  ✓ Enhanced SVD with micro-conditioning: motion_bucket_id=180, noise=0.02")
+            # Image-to-video with ENHANCED micro-conditioning parameters.
+            # We generate frames in manageable segments (e.g., 25 frames at a time)
+            # and chain segments by re-conditioning on the last generated frame.
+            # This avoids asking SVD to generate thousands of frames in one call,
+            # which is not supported in practice even on very large GPUs.
+            print("  💡 Using segmented Stable Video Diffusion generation for long videos")
+            
+            # Determine how many frames we actually need to match the requested
+            # playback FPS and audio duration (e.g., 60s * 60fps = 3600 frames).
+            try:
+                audio_duration = librosa.get_duration(path=str(audio_path))
+            except Exception:
+                # Fallback: assume 60 seconds if duration cannot be read
+                audio_duration = 60.0
+            
+            target_total_frames = int(np.ceil(audio_duration * fps))
+            # Conservative per-segment frame count based on diffusers SVD docs
+            segment_num_frames = 25
+            
+            print(f"  🎯 Target total frames: {target_total_frames} at {fps} fps")
+            print(f"  🔁 Generating in segments of up to {segment_num_frames} frames")
+            
+            all_frames = []
+            conditioning_image = initial_image
+            segment_index = 0
+            
+            while len(all_frames) < target_total_frames:
+                segment_index += 1
+                remaining = target_total_frames - len(all_frames)
+                current_segment_frames = min(segment_num_frames, remaining)
+                
+                print(f"    → Segment {segment_index}: generating {current_segment_frames} frames "
+                      f"(progress: {len(all_frames)}/{target_total_frames})")
+                
+                segment_result = pipe(
+                    conditioning_image,
+                    decode_chunk_size=8,  # Memory efficient decoding
+                    num_frames=current_segment_frames,
+                    motion_bucket_id=180,  # Higher motion for more dynamic scenes
+                    # Recommended noise_aug_strength from official diffusers docs
+                    # for more stable temporal behaviour while preserving detail.
+                    noise_aug_strength=0.1,
+                    num_inference_steps=40,  # Increased inference steps for better quality
+                )
+                
+                segment_frames = segment_result.frames[0]
+                if not segment_frames:
+                    print("  ⚠ No frames returned for this segment, stopping early.")
+                    break
+                
+                all_frames.extend(segment_frames)
+                conditioning_image = segment_frames[-1]
+            
+            # Trim any extra frames in case we overshot slightly
+            video_frames = all_frames[:target_total_frames]
+            print(f"  ✓ SVD segmented generation complete: {len(video_frames)} frames total")
         else:
             # Text-to-video with enhanced settings
             video_frames = pipe(
@@ -916,7 +991,13 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
         temp_video_path = OUTPUT_DIR / "temp_generated_video.mp4"
         print(f"\n[4/6] Exporting high-quality video frames...")
         export_start = time.time()
-        export_to_video(video_frames, str(temp_video_path), fps=24)
+        # Export with a base FPS equal to the requested final FPS so that
+        # the temporal spacing between frames matches the target playback rate.
+        # Note: Stable Video Diffusion was trained at a lower FPS; very high FPS
+        # values mainly change playback speed rather than adding new motion
+        # information. For truly higher perceived FPS, you would add a separate
+        # frame-interpolation step on top of this.
+        export_to_video(video_frames, str(temp_video_path), fps=fps)
         export_time = time.time() - export_start
         print(f"  ✓ Export completed in {export_time:.1f}s")
         
