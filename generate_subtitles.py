@@ -75,6 +75,13 @@ USE_IMG2VID = True  # Use image-to-video for much better quality
 # Device configuration
 FORCE_CPU = False  # Change to True if you want to force CPU usage
 
+# GPU backend preference:
+# - "auto": use any available GPU (NVIDIA CUDA or AMD ROCm) if possible
+# - "nvidia": prefer NVIDIA CUDA (works on A40 and other NVIDIA GPUs)
+# - "amd": prefer AMD ROCm builds of PyTorch (uses the same torch.cuda API)
+# - "cpu": force CPU only
+GPU_BACKEND = "auto"
+
 # Subtitle formatting parameters
 MAX_WORDS_PER_CAPTION = 10  # Maximum words per subtitle line
 MAX_CHARS_PER_CAPTION = 50  # Maximum characters per subtitle line
@@ -100,6 +107,66 @@ def create_output_directory():
     """Create the output directory if it doesn't exist."""
     OUTPUT_DIR.mkdir(exist_ok=True)
     print(f"✓ Output directory created/verified: {OUTPUT_DIR.absolute()}")
+
+
+def select_gpu_backend():
+    """
+    Let the user choose which GPU backend to target (NVIDIA, AMD, or CPU).
+    This does not change how PyTorch exposes the device (AMD ROCm builds still
+    use torch.cuda), but it makes the intent explicit and allows forcing CPU.
+    """
+    global GPU_BACKEND
+
+    print("\n" + "-"*70)
+    print("GPU BACKEND SELECTION")
+    print("-"*70)
+    print("\nSelect which hardware you want to use for heavy AI steps:")
+    print("  [1] NVIDIA GPU (CUDA)       - e.g. RTX 30xx, A40, etc.")
+    print("  [2] AMD GPU (ROCm build)    - requires PyTorch ROCm build")
+    print("  [3] CPU only                - slow but works everywhere")
+    print("  [4] Auto (recommended)      - automatically use any available GPU\n")
+
+    while True:
+        try:
+            choice = input("Enter your choice (1, 2, 3, or 4) [default: 4]: ").strip() or "4"
+            if choice == "1":
+                GPU_BACKEND = "nvidia"
+                break
+            elif choice == "2":
+                GPU_BACKEND = "amd"
+                break
+            elif choice == "3":
+                GPU_BACKEND = "cpu"
+                break
+            elif choice == "4":
+                GPU_BACKEND = "auto"
+                break
+            else:
+                print("❌ Invalid choice. Please enter 1, 2, 3, or 4.")
+        except Exception:
+            GPU_BACKEND = "auto"
+            break
+
+    print(f"\n✓ Selected GPU backend: {GPU_BACKEND.upper()}")
+
+
+def get_torch_device():
+    """
+    Decide which torch device string to use based on GPU_BACKEND and FORCE_CPU.
+
+    Returns:
+        str: "cuda" or "cpu"
+    """
+    if FORCE_CPU or GPU_BACKEND == "cpu":
+        return "cpu"
+
+    # For both NVIDIA CUDA and AMD ROCm builds, torch.cuda.is_available()
+    # is the right check; ROCm still uses the torch.cuda API.
+    if torch.cuda.is_available():
+        return "cuda"
+
+    # Fallback: no GPU visible to PyTorch
+    return "cpu"
 
 
 def format_timestamp_srt(seconds):
@@ -481,13 +548,13 @@ def step1_text_to_speech(text):
     # Initialize processor and model
     processor = AutoProcessor.from_pretrained(TTS_MODEL)
     
-    # Determine device
-    device = "cpu" if FORCE_CPU else ("cuda" if torch.cuda.is_available() else "cpu")
+    # Determine device based on selected backend
+    device = get_torch_device()
     use_fp16 = device == "cuda"
     
-    print(f"Using device: {device}")
+    print(f"Using device: {device} (backend: {GPU_BACKEND})")
     if device == "cuda":
-        print(f"  ✓ GPU detected! Using CUDA for faster generation")
+        print(f"  ✓ GPU detected! Using GPU for faster generation")
         print(f"  ✓ GPU: {torch.cuda.get_device_name(0)}")
     else:
         if not FORCE_CPU and not torch.cuda.is_available():
@@ -812,16 +879,20 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
         
         try:
             from diffusers import StableDiffusionXLPipeline, StableDiffusionXLImg2ImgPipeline
-            
+
+            # Decide device and dtype for SDXL based on selected backend
+            sdxl_device = get_torch_device()
+            sdxl_dtype = torch.float16 if sdxl_device == "cuda" else torch.float32
+
             # Load SDXL Base model for initial generation
             print("  [1a/3] Loading SDXL Base model...")
             sdxl_base = StableDiffusionXLPipeline.from_pretrained(
                 "stabilityai/stable-diffusion-xl-base-1.0",
-                torch_dtype=torch.float16,
-                variant="fp16",
+                torch_dtype=sdxl_dtype,
+                variant="fp16" if sdxl_dtype == torch.float16 else None,
                 use_safetensors=True
             )
-            sdxl_base.to("cuda")
+            sdxl_base.to(sdxl_device)
             
             # Generate base image with SDXL (denoising_end controls when to switch to refiner)
             print("  [1b/3] Generating with SDXL Base (1024x1024)...")
@@ -843,11 +914,11 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
             print("  [1c/3] Loading SDXL Refiner for final enhancement...")
             sdxl_refiner = StableDiffusionXLImg2ImgPipeline.from_pretrained(
                 "stabilityai/stable-diffusion-xl-refiner-1.0",
-                torch_dtype=torch.float16,
-                variant="fp16",
+                torch_dtype=sdxl_dtype,
+                variant="fp16" if sdxl_dtype == torch.float16 else None,
                 use_safetensors=True
             )
-            sdxl_refiner.to("cuda")
+            sdxl_refiner.to(sdxl_device)
             
             # Refine the image for photorealistic quality
             print("  [1d/3] Refining with SDXL Refiner for photorealistic details...")
@@ -883,28 +954,33 @@ def option2_generate_ai_video(text, audio_path, srt_path, emotion_profile, resol
             print(f"\n[2/6] Loading text-to-video model")
             print(f"  Model: {TEXT_TO_VIDEO_MODEL}")
             print("  (This will download ~7GB on first run)")
-        
+
         start_time = time.time()
-        
+
+        device = get_torch_device()
+
         if USE_IMG2VID and initial_image:
             # Use Stable Video Diffusion for MUCH better quality
             from diffusers import StableVideoDiffusionPipeline
-            
+
             pipe = StableVideoDiffusionPipeline.from_pretrained(
                 TEXT_TO_VIDEO_MODEL,
-                torch_dtype=torch.float16,
-                variant="fp16"
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                variant="fp16" if device == "cuda" else None
             )
-            pipe.to("cuda")
+            pipe.to(device)
         else:
             # Fallback to text-to-video
             pipe = DiffusionPipeline.from_pretrained(
                 TEXT_TO_VIDEO_MODEL,
-                torch_dtype=torch.float16,
-                variant="fp16"
+                torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+                variant="fp16" if device == "cuda" else None
             )
             pipe.scheduler = DPMSolverMultistepScheduler.from_config(pipe.scheduler.config)
-            pipe.enable_model_cpu_offload()
+            if device == "cuda":
+                pipe.to(device)
+            else:
+                pipe.enable_model_cpu_offload()
         
         load_time = time.time() - start_time
         print(f"  ✓ Model loaded in {load_time:.1f}s")
@@ -1090,7 +1166,8 @@ def main():
     try:
         # Setup
         create_output_directory()
-        
+        select_gpu_backend()
+
         # Show menu and get user choice
         video_mode = show_main_menu()
         
