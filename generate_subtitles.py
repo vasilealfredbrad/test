@@ -555,7 +555,13 @@ def step1_text_to_speech(text):
     print(f"Using device: {device} (backend: {GPU_BACKEND})")
     if device == "cuda":
         print(f"  ✓ GPU detected! Using GPU for faster generation")
-        print(f"  ✓ GPU: {torch.cuda.get_device_name(0)}")
+        # On some multi-GPU systems (or when CUDA_VISIBLE_DEVICES is set),
+        # querying device properties can trigger lazy CUDA init issues.
+        # We keep this informational only and never let it crash the pipeline.
+        try:
+            print(f"  ✓ GPU: {torch.cuda.get_device_name(0)}")
+        except Exception as gpu_name_err:
+            print(f"  ⚠ Could not query GPU name safely: {gpu_name_err}")
     else:
         if not FORCE_CPU and not torch.cuda.is_available():
             print(f"  ⚠ GPU not available. Using CPU (slower)")
