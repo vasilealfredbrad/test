@@ -24,8 +24,8 @@ fi
 # Step 2: Generate audio narration
 echo ""
 echo "🎤 Step 2: Generating audio narration..."
-cd /home/ubuntu/test
-source venv/bin/activate
+cd /home/ubuntu
+source opensora_env/bin/activate
 
 cat > generate_ceausescu_audio.py << 'PYTHON'
 import torch
@@ -72,7 +72,6 @@ audio_array = audio_output.cpu().numpy().squeeze()
 wavfile.write('ceausescu_narration.wav', model.generation_config.sample_rate, audio_array)
 duration = len(audio_array) / model.generation_config.sample_rate
 print(f"✅ Audio generated: {duration:.2f} seconds")
-print(f"✅ Saved to: ceausescu_narration.wav")
 PYTHON
 
 python generate_ceausescu_audio.py
@@ -130,58 +129,42 @@ SRT
 
 echo "✅ Captions created: ceausescu_captions.srt"
 
-# Step 4: Install ffmpeg if needed
+# Step 4: Concatenate videos
 echo ""
-echo "🔧 Step 4: Checking ffmpeg installation..."
-if ! command -v ffmpeg &> /dev/null; then
-    echo "Installing ffmpeg..."
-    apt-get update && apt-get install -y ffmpeg
-fi
-
-# Step 5: Concatenate videos
-echo ""
-echo "🎞️  Step 5: Concatenating video scenes..."
+echo "🎞️  Step 4: Concatenating video scenes..."
 cd /home/ubuntu/Open-Sora/samples/ion_story/video_256px
 
 # Create concat list
 ls -1 *.mp4 | sort | awk '{print "file '\''" $0 "'\''"}' > concat_list.txt
-echo "Video files to concatenate:"
-cat concat_list.txt
 
 # Concatenate videos
 ffmpeg -f concat -safe 0 -i concat_list.txt -c copy combined_raw.mp4 -y
 
-echo "✅ Videos concatenated"
-
-# Step 6: Upscale to 1080p (TikTok quality)
+# Step 5: Upscale to 1080p (TikTok quality)
 echo ""
-echo "📺 Step 6: Upscaling to 1080p for TikTok..."
+echo "📺 Step 5: Upscaling to 1080p for TikTok..."
 
 ffmpeg -i combined_raw.mp4 \
   -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1" \
   -c:v libx264 -preset slow -crf 18 \
   upscaled_1080p.mp4 -y
 
-echo "✅ Video upscaled to 1080x1920 (TikTok format)"
-
-# Step 7: Add audio
+# Step 6: Add audio
 echo ""
-echo "🎵 Step 7: Adding audio narration..."
+echo "🎵 Step 6: Adding audio narration..."
 
 ffmpeg -i upscaled_1080p.mp4 \
-  -i /home/ubuntu/test/ceausescu_narration.wav \
+  -i /home/ubuntu/ceausescu_narration.wav \
   -c:v copy -c:a aac -b:a 192k \
   -shortest \
   with_audio.mp4 -y
 
-echo "✅ Audio added"
-
-# Step 8: Add TikTok-style captions
+# Step 7: Add TikTok-style captions
 echo ""
-echo "💬 Step 8: Adding TikTok-style captions..."
+echo "💬 Step 7: Adding TikTok-style captions..."
 
 ffmpeg -i with_audio.mp4 \
-  -vf "subtitles=/home/ubuntu/test/ceausescu_captions.srt:force_style='FontName=Arial Black,FontSize=24,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=50'" \
+  -vf "subtitles=/home/ubuntu/ceausescu_captions.srt:force_style='FontName=Arial Black,FontSize=24,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=3,Shadow=2,Alignment=2,MarginV=50'" \
   -c:a copy \
   /home/ubuntu/ceausescu_tiktok_reel.mp4 -y
 
