@@ -43,6 +43,19 @@ python cluster_launcher.py --compare-models --num-gpus 5
 
 ## 🎨 Available Models
 
+### Open-Sora 1.3 (70B) - **NEW!** 🔥
+- **Quality**: ⭐⭐⭐⭐⭐⭐ OUTSTANDING (True Sora-level)
+- **Speed**: 🐌🐌 Very Slow (~30-60 min per video)
+- **VRAM**: 80GB (H200 SXM required)
+- **Best for**: Ultimate quality, production-grade videos
+
+```bash
+python cluster_launcher.py --num-gpus 8 --model opensora
+```
+
+**⚠️ Requires H200 SXM GPUs with 80GB VRAM**  
+See `OPENSORA_H200_SETUP.md` for installation guide.
+
 ### CogVideoX-5B (THUDM)
 - **Quality**: ⭐⭐⭐⭐⭐ Excellent (Sora-like)
 - **Speed**: 🐌 Slow (~15-25 min per video)

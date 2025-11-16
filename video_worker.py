@@ -25,6 +25,14 @@ from datetime import datetime
 # ============================================================================
 
 AVAILABLE_MODELS = {
+    "opensora": {
+        "name": "Open-Sora 1.3 (70B)",
+        "repo": "hpcaitech/Open-Sora",
+        "description": "ULTIMATE QUALITY - True Sora-level generation (H200 recommended)",
+        "vram": "80GB+ (H200 SXM)",
+        "speed": "very slow",
+        "quality": "outstanding"
+    },
     "cogvideox": {
         "name": "CogVideoX-5B",
         "repo": "THUDM/CogVideoX-5b",
@@ -72,6 +80,61 @@ OUTPUT_DIR = Path("cluster_output")
 # ============================================================================
 # VIDEO GENERATION FUNCTIONS
 # ============================================================================
+
+def generate_with_opensora(prompt, output_path, num_frames=51, fps=24, steps=100, gpu_id=0):
+    """Generate video using Open-Sora 1.3 (70B) - Ultimate quality for H200."""
+    print(f"[GPU {gpu_id}] Loading Open-Sora 1.3 (70B)...")
+    print(f"[GPU {gpu_id}] ⚠️  This is a 70B model - requires H200 SXM (80GB VRAM)")
+    
+    try:
+        # Try to import Open-Sora (requires custom installation)
+        import sys
+        sys.path.insert(0, '/path/to/Open-Sora')  # Adjust path
+        from opensora.models import OpenSoraModel
+        from opensora.utils import export_to_video
+        
+        print(f"[GPU {gpu_id}] Initializing Open-Sora 1.3...")
+        
+        # Load model with optimizations for H200
+        model = OpenSoraModel.from_pretrained(
+            "hpcaitech/Open-Sora-v1.3",
+            torch_dtype=torch.bfloat16,
+            device_map="auto",  # Automatic device mapping
+            low_cpu_mem_usage=True
+        )
+        
+        print(f"[GPU {gpu_id}] Generating {num_frames} frames at {fps} FPS...")
+        print(f"[GPU {gpu_id}] This will take 30-60 minutes for maximum quality...")
+        start_time = time.time()
+        
+        # Generate with Open-Sora
+        video = model.generate(
+            prompt=prompt,
+            num_frames=num_frames,
+            fps=fps,
+            num_inference_steps=steps,
+            guidance_scale=7.5,
+            height=720,  # Can go up to 1080p on H200
+            width=1280
+        )
+        
+        elapsed = time.time() - start_time
+        print(f"[GPU {gpu_id}] Generation completed in {elapsed/60:.1f} minutes")
+        
+        # Export video
+        export_to_video(video, str(output_path), fps=fps)
+        return output_path, elapsed
+        
+    except ImportError:
+        print(f"[GPU {gpu_id}] ⚠️  Open-Sora not installed or not found")
+        print(f"[GPU {gpu_id}] Install from: https://github.com/hpcaitech/Open-Sora")
+        print(f"[GPU {gpu_id}] Falling back to CogVideoX...")
+        return generate_with_cogvideox(prompt, output_path, num_frames, fps, steps, gpu_id)
+    except Exception as e:
+        print(f"[GPU {gpu_id}] ⚠️  Open-Sora error: {e}")
+        print(f"[GPU {gpu_id}] Falling back to CogVideoX...")
+        return generate_with_cogvideox(prompt, output_path, num_frames, fps, steps, gpu_id)
+
 
 def generate_with_cogvideox(prompt, output_path, num_frames=49, fps=8, steps=50, gpu_id=0):
     """Generate video using CogVideoX-5B with optimizations."""
@@ -331,6 +394,7 @@ def main():
     
     # Select generation function
     generators = {
+        "opensora": generate_with_opensora,
         "cogvideox": generate_with_cogvideox,
         "hunyuan": generate_with_hunyuan,
         "mochi": generate_with_mochi,

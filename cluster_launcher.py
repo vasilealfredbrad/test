@@ -38,6 +38,7 @@ DEFAULT_PROMPTS = [
 ]
 
 AVAILABLE_MODELS = {
+    "opensora": "Open-Sora 1.3 70B (ULTIMATE - H200 SXM required)",
     "cogvideox": "CogVideoX-5B (High quality, Sora-like)",
     "hunyuan": "HunyuanVideo (State-of-the-art)",
     "mochi": "Mochi-1 (Fast, high quality)",
